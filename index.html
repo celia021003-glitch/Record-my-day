@@ -104,6 +104,34 @@ function diffD(a,b){return Math.round((parseD(b)-parseD(a))/864e5)}
 function prettyD(s){const[y,m,d]=s.split('-').map(Number);const w=['日','一','二','三','四','五','六'][new Date(y,m-1,d).getDay()];return m+'月'+d+'日 · 周'+w}
 function daysUntil(s){if(!s)return null;const n=new Date();n.setHours(0,0,0,0);return Math.round((parseD(s)-n)/864e5)}
 function shiftM(ym,n){const[y,m]=ym.split('-').map(Number);const d=new Date(y,m-1+n,1);return d.getFullYear()+'-'+p2(d.getMonth()+1)}
+function fmtMoney(n){
+  if(!Number.isFinite(n))return '';
+  const v=Math.round(n*100)/100;
+  return String(v).replace(/\.0+$/,'').replace(/(\.\d)0$/,'$1')
+}
+function calcAmount(raw){
+  let s=String(raw||'').trim();
+  if(!s)return NaN;
+  s=s.replace(/[，,]/g,'').replace(/[×xX]/g,'*').replace(/[÷]/g,'/').replace(/[＋]/g,'+').replace(/[−－—–]/g,'-').replace(/\s+/g,'').replace(/[￥¥$€£]/g,'');
+  if(!s||!/\d/.test(s)||!/^[0-9+\-*/().]+$/.test(s))return NaN;
+  try{const v=Function('"use strict";return ('+s+')')();return Number.isFinite(v)?Math.round(v*100)/100:NaN}catch(e){return NaN}
+}
+function setEAmt(v){
+  eAmt=String(v||'');
+  const el=document.getElementById('eAmt');
+  if(el){el.value=eAmt;el.focus()}
+}
+function pressCalcKey(k){
+  const cur=String(eAmt||'');
+  if(k==='C'){setEAmt('');return}
+  if(k==='⌫'){setEAmt(cur.slice(0,-1));return}
+  if(k==='='){
+    const v=calcAmount(cur);
+    if(Number.isFinite(v))setEAmt(fmtMoney(v));
+    return
+  }
+  setEAmt(cur+k)
+}
 function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
 function aHex(a){return Math.round(clamp(a,0,1)*255).toString(16).padStart(2,'0')}
 function h2hsl(hex){
@@ -324,14 +352,20 @@ function renderFood(){
 function renderBills(){
   const cur=S.cur||'$';
   const cPills=CATS.map(([n,ic])=>pill(eCat===n,C.p,C.pS,ic+' '+n,'setECat',n)).join('');
+  const calcBtns=['7','8','9','÷','4','5','6','×','1','2','3','−','.','0','⌫','+','C','='];
+  const calcHTML=`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0 10px">
+    ${calcBtns.map(k=>`<button data-a="calcKey" data-v="${k}" style="height:36px;border-radius:10px;border:1px solid ${C.line};background:${k==='='?C.p:k==='C'?C.wS:C.card};color:${k==='='?'#fff':k==='C'?C.w:C.ink};font-size:15px;cursor:pointer">${k}</button>`).join('')}
+  </div>`;
   const addCard=card('记一笔',`
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <div style="${IS('flex:1;display:flex;align-items:center;gap:4px')}">
         <span style="color:${C.muted};flex-shrink:0">${cur}</span>
-        <input id="eAmt" value="${e(eAmt)}" inputmode="decimal" placeholder="金额" style="border:none;outline:none;background:none;flex:1;font-size:15px;color:${C.ink};width:100%">
+        <input id="eAmt" value="${e(eAmt)}" inputmode="decimal" placeholder="金额，可输入 12+8÷2" style="border:none;outline:none;background:none;flex:1;font-size:15px;color:${C.ink};width:100%">
       </div>
       <input id="eDate" type="date" value="${e(eDate)}" style="${IS('flex:0 0 130px')}">
     </div>
+    ${calcHTML}
+    <div style="font-size:11px;color:${C.faint};margin:-2px 0 10px">可以直接输入 18+6、120÷2、35×0.8，点 = 后会自动算出金额。</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${cPills}</div>
     <div style="display:flex;gap:8px">
       <input id="eNote" value="${e(eNote)}" placeholder="备注（可选）" style="${IS()}">
@@ -629,7 +663,8 @@ function bindEvents(){
     if(a==='delP'){save({...S,pantry:S.pantry.filter(x=>String(x.id)!==id)});return}
     if(a==='addW'){const t=(document.getElementById('wiIn')?.value||'').trim();if(!t)return;wiTxt='';save({...S,wishlist:[...S.wishlist,{id:Date.now(),name:t}]});return}
     if(a==='delW'){save({...S,wishlist:S.wishlist.filter(x=>String(x.id)!==id)});return}
-    if(a==='addE'){const amt=parseFloat(document.getElementById('eAmt')?.value||'');if(isNaN(amt)||amt<=0)return;const note=(document.getElementById('eNote')?.value||'').trim();const dt=document.getElementById('eDate')?.value||today();eAmt='';eNote='';save({...S,expenses:[{id:Date.now(),amount:Math.round(amt*100)/100,cat:eCat,note,date:dt},...S.expenses]});return}
+    if(a==='calcKey'){pressCalcKey(v);return}
+    if(a==='addE'){const amt=calcAmount(document.getElementById('eAmt')?.value||'');if(isNaN(amt)||amt<=0)return;const note=(document.getElementById('eNote')?.value||'').trim();const dt=document.getElementById('eDate')?.value||today();eAmt='';eNote='';save({...S,expenses:[{id:Date.now(),amount:Math.round(amt*100)/100,cat:eCat,note,date:dt},...S.expenses]});return}
     if(a==='setECat'){eCat=v;render();return}
     if(a==='delE'){save({...S,expenses:S.expenses.filter(x=>String(x.id)!==id)});return}
     if(a==='prevMon'){eMon=shiftM(eMon,-1);render();return}
